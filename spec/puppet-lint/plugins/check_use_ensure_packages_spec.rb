@@ -150,5 +150,23 @@ describe 'use_ensure_packages' do
         expect(manifest).to eq(expected_code)
       end
     end
+
+    context 'if not defined package twice concat' do
+      let(:code) { "
+        if ! defined (Package['foo']) {
+          package {'foo': }
+        }
+        if ! defined (Package['bar']) {
+          package {'bar': }
+        }
+      " }
+      let(:expected_code) { "
+        ensure_packages(['foo','bar'])
+      " }
+
+      it 'should solve the problem' do
+        expect(manifest).to eq(expected_code)
+      end
+    end
   end
 end

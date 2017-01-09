@@ -32,6 +32,8 @@ PuppetLint.new_check(:use_ensure_packages) do
     },
   ]
 
+  FORMATTING_TOKENS = PuppetLint::Lexer::FORMATTING_TOKENS
+
   def check
     if_indexes.each do |cond|
       tokens = filter_code_tokens(cond[:tokens])
@@ -72,22 +74,89 @@ PuppetLint.new_check(:use_ensure_packages) do
       cond[:tokens].first.line == problem[:line] and cond[:tokens].first.column == problem[:column]
     end.first
 
+    prev_ensure_packages = PuppetLint::Data.function_indexes.keep_if do |func|
+      func[:tokens].first.value == 'ensure_packages' and
+      func[:tokens].last == cond[:tokens].first.prev_code_token
+    end.first
+
     package_name = filter_code_tokens(cond[:tokens])[NAME_INDEX].value
 
-    new_tokens = [
-      PuppetLint::Lexer::Token.new(:NAME, 'ensure_packages', nil, nil),
-      PuppetLint::Lexer::Token.new(:LPAREN, '(', nil, nil),
-      PuppetLint::Lexer::Token.new(:LBRACK, '[', nil, nil),
-      PuppetLint::Lexer::Token.new(:SSTRING, package_name, nil, nil),
-      PuppetLint::Lexer::Token.new(:RBRACK, ']', nil, nil),
-      PuppetLint::Lexer::Token.new(:RPAREN, ')', nil, nil),
-    ]
+    unless prev_ensure_packages.nil?
+      delete_offset = tokens_idx(cond[:tokens].first.prev_code_token)+1
+    else
+      delete_offset = cond[:start]
+    end
 
-    replace_offset = cond[:start]
-    replace_length = cond[:end] - cond[:start] + 1
+    delete_length = cond[:end] - delete_offset + 1
 
-    tokens.slice!(replace_offset, replace_length)
-    tokens.insert(replace_offset, *new_tokens)
+    remove_tokens(delete_offset, delete_length)
+
+
+    unless prev_ensure_packages.nil?
+      insert_offset = tokens_idx(prev_ensure_packages[:tokens].last)
+      insert_offset = tokens.first(insert_offset).rindex { |t| t.type == :SSTRING } + 1
+
+      new_tokens = [
+        PuppetLint::Lexer::Token.new(:COMMA, ',', nil, nil),
+        PuppetLint::Lexer::Token.new(:SSTRING, package_name, nil, nil),
+      ]
+    else
+      insert_offset = cond[:start]
+
+      new_tokens = [
+        PuppetLint::Lexer::Token.new(:NAME, 'ensure_packages', nil, nil),
+        PuppetLint::Lexer::Token.new(:LPAREN, '(', nil, nil),
+        PuppetLint::Lexer::Token.new(:LBRACK, '[', nil, nil),
+        PuppetLint::Lexer::Token.new(:SSTRING, package_name, nil, nil),
+        PuppetLint::Lexer::Token.new(:RBRACK, ']', nil, nil),
+        PuppetLint::Lexer::Token.new(:RPAREN, ')', nil, nil),
+      ]
+    end
+
+
+    insert_tokens(insert_offset, new_tokens)
+
+
+    PuppetLint::Data.tokens = tokens
+  end
+
+  def tokens_idx(obj)
+    tokens.index(obj)
+  end
+
+  def remove_tokens(from, num)
+    tokens.slice!(from, num)
+    fix_linked_list(from-1, 2)
+  end
+
+  def insert_tokens(idx, new_tokens)
+    tokens.insert(idx, *new_tokens)
+    fix_linked_list(idx, tokens.size)
+  end
+
+  def fix_linked_list(from, to)
+    Range.new(from,to-from).each do |idx|
+      if idx > 0
+        tokens[idx].prev_token = tokens[idx-1]
+        unless FORMATTING_TOKENS.include?(tokens[idx].type)
+          prev_nf_idx = tokens.first(idx).rindex { |r| ! FORMATTING_TOKENS.include? r.type }
+          unless prev_nf_idx.nil?
+            tokens[prev_nf_idx].next_code_token = tokens[idx]
+            tokens[idx].prev_code_token = tokens[prev_nf_idx]
+          end
+        end
+      end
+      if idx < tokens.length
+        tokens[idx].next_token = tokens[idx+1]
+        unless FORMATTING_TOKENS.include?(tokens[idx].type)
+          next_nf_idx = tokens.last(tokens.size-idx).index { |r| ! FORMATTING_TOKENS.include? r.type }
+          unless next_nf_idx.nil?
+            tokens[next_nf_idx].prev_code_token = tokens[idx]
+            tokens[idx].next_code_token = tokens[next_nf_idx]
+          end
+        end
+      end
+    end
   end
 
   def filter_code_tokens(tokens)
