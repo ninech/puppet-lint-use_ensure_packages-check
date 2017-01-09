@@ -1,166 +1,154 @@
 PuppetLint.new_check(:use_ensure_packages) do
-
   TYPE_SEQUENCE_START = [
     # if ! defined ( Package[NAME])
     :IF, :NOT, :NAME, :LPAREN, :CLASSREF, :LBRACK, :SSTRING, :RBRACK, :RPAREN,
     # { package {NAME:
     :LBRACE, :NAME, :LBRACE, :SSTRING, :COLON
-  ]
+  ].freeze
   TYPE_SEQUENCE_END = [
     # } }
     :RBRACE, :RBRACE
-  ]
-  VALUE_SEQUENCE = { 2 => 'defined', 4 => 'Package', 10 => 'package'}
+  ].freeze
+  VALUE_SEQUENCE = { 2 => 'defined', 4 => 'Package', 10 => 'package' }.freeze
   NAME_INDEX = 6
 
   OPTINAL_CONTENT = [
     { # ensure => installed
       sequence: [:NAME, :FARROW, :NAME],
-      values: { 0 => 'ensure', 2 => 'installed'},
+      values: { 0 => 'ensure', 2 => 'installed' }
     },
     { # ensure => installed;
       sequence: [:NAME, :FARROW, :NAME, :SEMIC],
-      values: { 0 => 'ensure', 2 => 'installed'},
+      values: { 0 => 'ensure', 2 => 'installed' }
     },
     { # ensure => present
       sequence: [:NAME, :FARROW, :NAME],
-      values: { 0 => 'ensure', 2 => 'present'},
+      values: { 0 => 'ensure', 2 => 'present' }
     },
     { # ensure => present;
       sequence: [:NAME, :FARROW, :NAME, :SEMIC],
-      values: { 0 => 'ensure', 2 => 'present'},
-    },
-  ]
+      values: { 0 => 'ensure', 2 => 'present' }
+    }
+  ].freeze
 
   FORMATTING_TOKENS = PuppetLint::Lexer::FORMATTING_TOKENS
 
   def check
     if_indexes.each do |cond|
-      tokens = filter_code_tokens(cond[:tokens])
+      next if check_if(cond)
 
-      # Test start of patterns
-      next unless tokens.first(TYPE_SEQUENCE_START.size).map(&:type) == TYPE_SEQUENCE_START
-      next unless VALUE_SEQUENCE.values == VALUE_SEQUENCE.keys.map { |i| tokens[i].value }
-
-      # Test end of pattern
-      next unless tokens.last(TYPE_SEQUENCE_END.size).map(&:type) == TYPE_SEQUENCE_END
-
-      if tokens.length == (TYPE_SEQUENCE_START.size + TYPE_SEQUENCE_END.size)
-        notify :warning, {
-          :message => 'ensure_packages should be used',
-          :line    => cond[:tokens].first.line,
-          :column  => cond[:tokens].first.column,
-        }
-      else
-        tokens = tokens.slice(Range.new(TYPE_SEQUENCE_START.size, -TYPE_SEQUENCE_END.size-1))
-        OPTINAL_CONTENT.each do |c|
-          next unless tokens.map(&:type) == c[:sequence]
-          next unless c[:values].values == c[:values].keys.map { |i| tokens[i].value }
-
-          notify :warning, {
-            :message => 'ensure_packages should be used',
-            :line    => cond[:tokens].first.line,
-            :column  => cond[:tokens].first.column,
-          }
-
-          break
-        end
-      end
+      notify :warning,
+             message: 'ensure_packages should be used',
+             line: cond[:tokens].first.line,
+             column: cond[:tokens].first.column
     end
   end
 
-  def fix(problem)
-    cond = if_indexes.select do |cond|
-      cond[:tokens].first.line == problem[:line] and cond[:tokens].first.column == problem[:column]
-    end.first
+  def check_if(cond)
+    tokens = filter_code_tokens(cond[:tokens])
 
-    prev_ensure_packages = PuppetLint::Data.function_indexes.keep_if do |func|
-      func[:tokens].first.value == 'ensure_packages' and
-      func[:tokens].last == cond[:tokens].first.prev_code_token
+    # Test start of patterns
+    return true unless match_tokens(tokens, TYPE_SEQUENCE_START, VALUE_SEQUENCE)
+
+    # Test end of pattern
+    return true unless match_tokens(tokens.last(2), TYPE_SEQUENCE_END, {})
+
+    tokens = tokens.slice(Range.new(TYPE_SEQUENCE_START.size,
+                                    -TYPE_SEQUENCE_END.size - 1))
+
+    return false if tokens.empty?
+
+    return true unless OPTINAL_CONTENT.index do |c|
+      match_tokens(tokens, c[:sequence], c[:values])
+    end
+
+    false
+  end
+
+  def match_tokens(tokens, type, value)
+    tokens.first(type.size).map(&:type) == type &&
+      value.values == value.keys.map { |i| tokens[i].value }
+  end
+
+  def fix(problem)
+    cond = if_indexes.select do |c|
+      c[:tokens].first.line == problem[:line] &&
+        c[:tokens].first.column == problem[:column]
     end.first
 
     package_name = filter_code_tokens(cond[:tokens])[NAME_INDEX].value
 
-    unless prev_ensure_packages.nil?
-      delete_offset = tokens_idx(cond[:tokens].first.prev_code_token)+1
-    else
-      delete_offset = cond[:start]
-    end
+    remove_tokens(cond[:start], cond[:end])
 
-    delete_length = cond[:end] - delete_offset + 1
+    new_tokens = ensure_packages_tokens(package_name)
 
-    remove_tokens(delete_offset, delete_length)
-
-
-    unless prev_ensure_packages.nil?
-      insert_offset = tokens_idx(prev_ensure_packages[:tokens].last)
-      insert_offset = tokens.first(insert_offset).rindex { |t| t.type == :SSTRING } + 1
-
-      new_tokens = [
-        PuppetLint::Lexer::Token.new(:COMMA, ',', nil, nil),
-        PuppetLint::Lexer::Token.new(:SSTRING, package_name, nil, nil),
-      ]
-    else
-      insert_offset = cond[:start]
-
-      new_tokens = [
-        PuppetLint::Lexer::Token.new(:NAME, 'ensure_packages', nil, nil),
-        PuppetLint::Lexer::Token.new(:LPAREN, '(', nil, nil),
-        PuppetLint::Lexer::Token.new(:LBRACK, '[', nil, nil),
-        PuppetLint::Lexer::Token.new(:SSTRING, package_name, nil, nil),
-        PuppetLint::Lexer::Token.new(:RBRACK, ']', nil, nil),
-        PuppetLint::Lexer::Token.new(:RPAREN, ')', nil, nil),
-      ]
-    end
-
-
-    insert_tokens(insert_offset, new_tokens)
-
+    insert_tokens(cond[:start], new_tokens)
 
     PuppetLint::Data.tokens = tokens
+
+    merge_if_possible(cond[:start])
+  end
+
+  def merge_if_possible(idx)
+    target = PuppetLint::Data.function_indexes.keep_if do |func|
+      func[:tokens].first.type == :NAME &&
+        func[:tokens].first.value == 'ensure_packages' &&
+        func[:tokens].last.next_code_token == tokens[idx] &&
+        func[:tokens].last.next_code_token != func[:tokens].first
+    end
+
+    return if target.empty?
+
+    start_idx = tokens.first(idx).rindex { |t| t.type == :SSTRING } + 1
+
+    remove_tokens(start_idx, idx + 2)
+    insert_tokens(start_idx, [PuppetLint::Lexer::Token.new(:COMMA, ',', 0, 0)])
   end
 
   def tokens_idx(obj)
     tokens.index(obj)
   end
 
-  def remove_tokens(from, num)
+  def remove_tokens(from, to)
+    num = to - from + 1
     tokens.slice!(from, num)
-    fix_linked_list(from-1, 2)
+    fix_linked_list
   end
 
   def insert_tokens(idx, new_tokens)
     tokens.insert(idx, *new_tokens)
-    fix_linked_list(idx, tokens.size)
+    fix_linked_list
   end
 
-  def fix_linked_list(from, to)
-    Range.new(from,to-from).each do |idx|
-      if idx > 0
-        tokens[idx].prev_token = tokens[idx-1]
-        unless FORMATTING_TOKENS.include?(tokens[idx].type)
-          prev_nf_idx = tokens.first(idx).rindex { |r| ! FORMATTING_TOKENS.include? r.type }
-          unless prev_nf_idx.nil?
-            tokens[prev_nf_idx].next_code_token = tokens[idx]
-            tokens[idx].prev_code_token = tokens[prev_nf_idx]
-          end
-        end
-      end
-      if idx < tokens.length
-        tokens[idx].next_token = tokens[idx+1]
-        unless FORMATTING_TOKENS.include?(tokens[idx].type)
-          next_nf_idx = tokens.last(tokens.size-idx).index { |r| ! FORMATTING_TOKENS.include? r.type }
-          unless next_nf_idx.nil?
-            tokens[next_nf_idx].prev_code_token = tokens[idx]
-            tokens[idx].next_code_token = tokens[next_nf_idx]
-          end
-        end
-      end
+  def ensure_packages_tokens(name)
+    [
+      PuppetLint::Lexer::Token.new(:NAME, 'ensure_packages', nil, nil),
+      PuppetLint::Lexer::Token.new(:LPAREN, '(', nil, nil),
+      PuppetLint::Lexer::Token.new(:LBRACK, '[', nil, nil),
+      PuppetLint::Lexer::Token.new(:SSTRING, name, nil, nil),
+      PuppetLint::Lexer::Token.new(:RBRACK, ']', nil, nil),
+      PuppetLint::Lexer::Token.new(:RPAREN, ')', nil, nil)
+    ]
+  end
+
+  def fix_linked_list
+    tokens.each_cons(2) do |a, b|
+      a.next_token = b
+      b.prev_token = a
+    end
+
+    filter_formating_tokens(tokens).each_cons(2) do |a, b|
+      a.next_code_token = b
+      b.prev_code_token = a
     end
   end
 
   def filter_code_tokens(tokens)
-    tokens.delete_if { |token| PuppetLint::Lexer::FORMATTING_TOKENS.has_key? token.type }
+    tokens.delete_if { |token| FORMATTING_TOKENS.key? token.type }
+  end
+
+  def filter_formating_tokens(tokens)
+    tokens.select { |token| !FORMATTING_TOKENS.key? token.type }
   end
 
   def if_indexes
