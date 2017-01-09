@@ -14,6 +14,54 @@ describe 'use_ensure_packages' do
       end
     end
 
+    context 'if not defined package ensure installed' do
+      let(:code) { "
+        if ! defined (Package['foo']) {
+          package {'foo': ensure => installed }
+        }
+      " }
+
+      it 'should detect the problem' do
+        expect(problems).to have(1).problems
+      end
+    end
+
+    context 'if not defined package ensure installed' do
+      let(:code) { "
+        if ! defined (Package['foo']) {
+          package {'foo': ensure => installed; }
+        }
+      " }
+
+      it 'should detect the problem' do
+        expect(problems).to have(1).problems
+      end
+    end
+
+    context 'if not defined package ensure installed' do
+      let(:code) { "
+        if ! defined (Package['foo']) {
+          package {'foo': ensure => present }
+        }
+      " }
+
+      it 'should detect the problem' do
+        expect(problems).to have(1).problems
+      end
+    end
+
+    context 'if not defined package ensure installed' do
+      let(:code) { "
+        if ! defined (Package['foo']) {
+          package {'foo': ensure => present; }
+        }
+      " }
+
+      it 'should detect the problem' do
+        expect(problems).to have(1).problems
+      end
+    end
+
     context 'if not defined package twice' do
       let(:code) { "
         if ! defined (Package['foo']) {
@@ -56,6 +104,21 @@ describe 'use_ensure_packages' do
       let(:code) { "
         if ! defined (Package['foo']) {
           package {'foo': }
+        }
+      " }
+      let(:expected_code) { "
+        ensure_packages(['foo'])
+      " }
+
+      it 'should solve the problem' do
+        expect(manifest).to eq(expected_code)
+      end
+    end
+
+    context 'if not defined package ensure installed' do
+      let(:code) { "
+        if ! defined (Package['foo']) {
+          package {'foo': ensure => installed }
         }
       " }
       let(:expected_code) { "

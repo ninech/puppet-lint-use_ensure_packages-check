@@ -1,24 +1,69 @@
 PuppetLint.new_check(:use_ensure_packages) do
 
-  TYPE_SEQUENCE = [
+  TYPE_SEQUENCE_START = [
+    # if ! defined ( Package[NAME])
     :IF, :NOT, :NAME, :LPAREN, :CLASSREF, :LBRACK, :SSTRING, :RBRACK, :RPAREN,
-    :LBRACE, :NAME, :LBRACE, :SSTRING, :COLON, :RBRACE, :RBRACE
+    # { package {NAME:
+    :LBRACE, :NAME, :LBRACE, :SSTRING, :COLON
+  ]
+  TYPE_SEQUENCE_END = [
+    # } }
+    :RBRACE, :RBRACE
   ]
   VALUE_SEQUENCE = { 2 => 'defined', 4 => 'Package', 10 => 'package'}
-  PACKAGE_NAME_INDEX = 6
+  NAME_INDEX = 6
+
+  OPTINAL_CONTENT = [
+    { # ensure => installed
+      sequence: [:NAME, :FARROW, :NAME],
+      values: { 0 => 'ensure', 2 => 'installed'},
+    },
+    { # ensure => installed;
+      sequence: [:NAME, :FARROW, :NAME, :SEMIC],
+      values: { 0 => 'ensure', 2 => 'installed'},
+    },
+    { # ensure => present
+      sequence: [:NAME, :FARROW, :NAME],
+      values: { 0 => 'ensure', 2 => 'present'},
+    },
+    { # ensure => present;
+      sequence: [:NAME, :FARROW, :NAME, :SEMIC],
+      values: { 0 => 'ensure', 2 => 'present'},
+    },
+  ]
 
   def check
     if_indexes.each do |cond|
       tokens = filter_code_tokens(cond[:tokens])
-      next unless tokens.first(TYPE_SEQUENCE.length).map(&:type) == TYPE_SEQUENCE
 
+      # Test start of patterns
+      next unless tokens.first(TYPE_SEQUENCE_START.size).map(&:type) == TYPE_SEQUENCE_START
       next unless VALUE_SEQUENCE.values == VALUE_SEQUENCE.keys.map { |i| tokens[i].value }
 
-      notify :warning, {
-        :message => 'ensure_packages should be used',
-        :line    => cond[:tokens].first.line,
-        :column  => cond[:tokens].first.column,
-      }
+      # Test end of pattern
+      next unless tokens.last(TYPE_SEQUENCE_END.size).map(&:type) == TYPE_SEQUENCE_END
+
+      if tokens.length == (TYPE_SEQUENCE_START.size + TYPE_SEQUENCE_END.size)
+        notify :warning, {
+          :message => 'ensure_packages should be used',
+          :line    => cond[:tokens].first.line,
+          :column  => cond[:tokens].first.column,
+        }
+      else
+        tokens = tokens.slice(Range.new(TYPE_SEQUENCE_START.size, -TYPE_SEQUENCE_END.size-1))
+        OPTINAL_CONTENT.each do |c|
+          next unless tokens.map(&:type) == c[:sequence]
+          next unless c[:values].values == c[:values].keys.map { |i| tokens[i].value }
+
+          notify :warning, {
+            :message => 'ensure_packages should be used',
+            :line    => cond[:tokens].first.line,
+            :column  => cond[:tokens].first.column,
+          }
+
+          break
+        end
+      end
     end
   end
 
@@ -27,7 +72,7 @@ PuppetLint.new_check(:use_ensure_packages) do
       cond[:tokens].first.line == problem[:line] and cond[:tokens].first.column == problem[:column]
     end.first
 
-    package_name = filter_code_tokens(cond[:tokens])[PACKAGE_NAME_INDEX].value
+    package_name = filter_code_tokens(cond[:tokens])[NAME_INDEX].value
 
     new_tokens = [
       PuppetLint::Lexer::Token.new(:NAME, 'ensure_packages', nil, nil),
