@@ -90,19 +90,29 @@ PuppetLint.new_check(:use_ensure_packages) do
   end
 
   def merge_if_possible(idx)
-    target = PuppetLint::Data.function_indexes.keep_if do |func|
-      func[:tokens].first.type == :NAME &&
-        func[:tokens].first.value == 'ensure_packages' &&
-        func[:tokens].last.next_code_token == tokens[idx] &&
+    target = find_function('ensure_packages').keep_if do |func|
+      func[:tokens].last.next_code_token == tokens[idx] &&
         func[:tokens].last.next_code_token != func[:tokens].first
     end
 
     return if target.empty?
 
+    # Count non :SSTRING, :COMMA tokens to ensure there are no parameters
+    return unless 5 == filter_code_tokens(target.first[:tokens]).count do |t|
+      ![:SSTRING, :COMMA].include?(t.type)
+    end
+
     start_idx = tokens.first(idx).rindex { |t| t.type == :SSTRING } + 1
 
     remove_tokens(start_idx, idx + 2)
     insert_tokens(start_idx, [PuppetLint::Lexer::Token.new(:COMMA, ',', 0, 0)])
+  end
+
+  def find_function(name)
+    PuppetLint::Data.function_indexes.keep_if do |func|
+      func[:tokens].first.type == :NAME &&
+        func[:tokens].first.value == name
+    end
   end
 
   def tokens_idx(obj)

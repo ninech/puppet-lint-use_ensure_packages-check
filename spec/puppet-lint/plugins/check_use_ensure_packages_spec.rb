@@ -151,7 +151,7 @@ describe 'use_ensure_packages' do
       end
     end
 
-    context 'if not defined package twice concat' do
+    context 'merge generated ensure_packages statements' do
       let(:code) do
         "if ! defined (Package['foo']) {
           package {'foo': }
@@ -162,6 +162,39 @@ describe 'use_ensure_packages' do
       end
       let(:expected_code) do
         "ensure_packages(['foo','bar'])"
+      end
+
+      it 'should solve the problem' do
+        expect(manifest).to eq(expected_code)
+      end
+    end
+
+    context 'merge to pre existing ensure_packages' do
+      let(:code) do
+        "ensure_packages(['foo'])
+        if ! defined (Package['bar']) {
+          package {'bar': }
+        }"
+      end
+      let(:expected_code) do
+        "ensure_packages(['foo','bar'])"
+      end
+
+      it 'should solve the problem' do
+        expect(manifest).to eq(expected_code)
+      end
+    end
+
+    context 'do not merge to pre existing ensure_packages with arguments' do
+      let(:code) do
+        "ensure_packages(['foo'], {'ensure' => 'present'})
+         if ! defined (Package['bar']) {
+           package {'bar': }
+         }"
+      end
+      let(:expected_code) do
+        "ensure_packages(['foo'], {'ensure' => 'present'})
+         ensure_packages(['bar'])"
       end
 
       it 'should solve the problem' do
