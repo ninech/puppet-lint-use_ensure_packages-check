@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
     'spec/**/*',
   ]
   spec.test_files  = Dir['spec/**/*']
-  spec.summary     = 'A puppet-lint plugin to check where ensure_packages should be used.'
+  spec.summary     = 'A puppet-lint plugin for "if !defined(Package" syntax.'
   spec.description = <<-EOF
     A puppet-lint plugin to check that contains if ! defined (Package statements.
   EOF
@@ -24,4 +24,5 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'rspec-json_expectations'
   spec.add_development_dependency 'rake'
   spec.add_development_dependency 'rubocop'
+  spec.add_development_dependency 'simplecov-console'
 end
