@@ -1,4 +1,4 @@
-# puppet-lint use ensure_packages check
+# puppet-lint use_ensure_packages check
 
 [![Build Status](https://travis-ci.org/ninech/puppet-lint-use_ensure_packages-check.svg?branch=master)](https://travis-ci.org/ninech/puppet-lint-use_ensure_packages-check)
 [![Gem Version](https://badge.fury.io/rb/puppet-lint-use_ensure_packages-check.svg)](https://badge.fury.io/rb/puppet-lint-use_ensure_packages-check)
