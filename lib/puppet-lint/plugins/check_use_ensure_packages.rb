@@ -35,6 +35,7 @@ PuppetLint.new_check(:use_ensure_packages) do
 
   def check
     if_indexes.each do |cond|
+      next if check_if_else(cond)
       next if check_if(cond)
 
       notify :warning,
@@ -42,6 +43,15 @@ PuppetLint.new_check(:use_ensure_packages) do
              line: cond[:tokens].first.line,
              column: cond[:tokens].first.column
     end
+  end
+
+  def check_if_else(cond)
+    tokens = filter_code_tokens(cond[:tokens])
+
+    return true if tokens.last.next_code_token &&
+                   [:ELSE, :ELSIF].include?(tokens.last.next_code_token.type)
+
+    false
   end
 
   def check_if(cond)
@@ -59,6 +69,7 @@ PuppetLint.new_check(:use_ensure_packages) do
     return false if tokens.empty?
 
     return true unless OPTINAL_CONTENT.index do |c|
+      next unless tokens.length == c[:sequence].length
       match_tokens(tokens, c[:sequence], c[:values])
     end
 

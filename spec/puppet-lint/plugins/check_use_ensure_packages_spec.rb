@@ -62,6 +62,46 @@ describe 'use_ensure_packages' do
       end
     end
 
+    context 'if not defined package w/ notify' do
+      let(:code) do
+        "if ! defined (Package['foo']) {
+          package {'foo': ensure => present, notify => Service['apache2'];}
+        }"
+      end
+
+      it 'should not detect any problem' do
+        expect(problems).to have(0).problems
+      end
+    end
+
+    context 'if not defined package w/ else' do
+      let(:code) do
+        "if ! defined (Package['foo']) {
+           package {'foo': ensure => present; }
+         } else {
+           package {'bar': ensure => present; }
+         }"
+      end
+
+      it 'should not detect any problem' do
+        expect(problems).to have(0).problems
+      end
+    end
+
+    context 'if not defined package w/ elsis' do
+      let(:code) do
+        "if ! defined (Package['foo']) {
+           package {'foo': ensure => present; }
+         } elsif ! defined (Package['bar']) {
+           package {'bar': ensure => present; }
+         }"
+      end
+
+      it 'should not detect any problem' do
+        expect(problems).to have(0).problems
+      end
+    end
+
     context 'if not defined package twice' do
       let(:code) do
         "if ! defined (Package['foo']) {
